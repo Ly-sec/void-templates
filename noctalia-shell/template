@@ -1,0 +1,23 @@
+# Maintainer: Kevin <github@kev314.dev>
+# Co-Maintainer: Lysec <itslysec@gmail.com>
+
+pkgname=noctalia-shell
+version=2.14.4
+revision=1
+hostmakedepends=""
+depends="quickshell font-inter brightnessctl ddcutil"
+short_desc="A sleek and minimal desktop shell thoughtfully crafted for Wayland, built with Quickshell."
+homepage="https://github.com/noctalia-dev/noctalia-shell"
+license="MIT"
+
+distfiles="https://github.com/noctalia-dev/noctalia-shell/archive/refs/tags/v${version}.tar.gz"
+checksum="8b20cfdd0f9949caeb7809970cc7116270c56c76f6110900dca3dfb292b9d0c8"
+
+build() {
+    return 0
+}
+
+do_install() {
+    mkdir -p "${DESTDIR}/etc/xdg/quickshell/noctalia-shell"
+    cp -r "${wrksrc}/." "${DESTDIR}/etc/xdg/quickshell/noctalia-shell/"
+}
