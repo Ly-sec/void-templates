@@ -1,4 +1,3 @@
-# Template file for 'quickshell'
 pkgname=quickshell
 version=0.2.0
 revision=1
@@ -12,9 +11,9 @@ makedepends="cli11 qt6-base-private-devel qt6-declarative-private-devel
  pam-devel"
 depends="qt6-svg"
 short_desc="Flexible QtQuick-based desktop shell toolkit"
-maintainer="classabbyamp <void@placeviolette.net>"
+maintainer="Ly-sec <itslysec@gmail.com>"
 license="LGPL-3.0-only"
 homepage="https://quickshell.org"
 changelog="https://quickshell.org/changelog/"
-distfiles="https://git.outfoxxed.me/quickshell/quickshell/archive/v${version}.tar.gz"
+distfiles="https://github.com/quickshell-mirror/quickshell/archive/refs/tags/v${version}.tar.gz"
 checksum=568291b2397e4859ebc8b1d5cdc60fead2ce2da2368342e5f35c19bb1e32834d

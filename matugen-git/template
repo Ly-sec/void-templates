@@ -1,11 +1,10 @@
-# Template file for 'matugen-git'
 pkgname=matugen-git
 version=2.4.1
 revision=1
 build_style=cargo
 hostmakedeps="cargo"
 short_desc="Material you color generation tool with templates"
-maintainer="Zerachiel <z.dadsi21@gmail.com>"
+maintainer="Ly-sec <itslysec@gmail.com>"
 license="GPL-2.0-only"
 homepage="https://github.com/InioX/matugen"
 distfiles="https://github.com/InioX/matugen/archive/refs/heads/main.tar.gz"

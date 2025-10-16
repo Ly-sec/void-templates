@@ -1,9 +1,7 @@
-# Maintainer: Lysec <itslysec@gmail.com>
-
 pkgname=matugen-bin
 version=2.4.1
 revision=1
-
+maintainer="Ly-sec <itslysec@gmail.com>"
 short_desc="A material you color generation tool with templates"
 homepage="https://github.com/InioX/matugen"
 license="GPL-2.0-or-later"

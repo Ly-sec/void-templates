@@ -80,7 +80,7 @@ jobs:
               return None, None
           
           def update_template(info, new_version):
-              """Update template file with new version"""
+              """Update template file with new version and checksum"""
               content = info['content']
               
               # Update version
@@ -100,6 +100,50 @@ jobs:
               # Write back
               with open(info['file'], 'w') as f:
                   f.write(content)
+              
+              # Update checksum using xgensum
+              try:
+                  # Extract package directory
+                  pkg_dir = os.path.dirname(info['file'])
+                  
+                  # Download the source file to calculate checksum
+                  print(f"  Calculating checksum...")
+                  
+                  # Parse distfiles URL from template
+                  distfiles_match = re.search(r'distfiles="([^"]+)"', content)
+                  if distfiles_match:
+                      url_template = distfiles_match.group(1)
+                      # Replace ${version} with actual version
+                      download_url = url_template.replace('${version}', new_version)
+                      
+                      # Download file
+                      response = requests.get(download_url, timeout=30)
+                      if response.status_code == 200:
+                          # Calculate SHA256
+                          import hashlib
+                          checksum = hashlib.sha256(response.content).hexdigest()
+                          
+                          # Update checksum in file
+                          with open(info['file'], 'r') as f:
+                              content = f.read()
+                          
+                          content = re.sub(
+                              r'checksum=\S+',
+                              f'checksum={checksum}',
+                              content
+                          )
+                          
+                          with open(info['file'], 'w') as f:
+                              f.write(content)
+                          
+                          print(f"  Checksum updated: {checksum}")
+                          return True
+                      else:
+                          print(f"  Warning: Could not download source file (HTTP {response.status_code})")
+                  else:
+                      print(f"  Warning: Could not find distfiles URL in template")
+              except Exception as e:
+                  print(f"  Warning: Could not update checksum: {e}")
               
               return True
           
