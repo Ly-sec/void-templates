@@ -126,12 +126,12 @@ jobs:
           subprocess.run(['git', 'config', 'user.name', 'github-actions[bot]'], check=True)
           subprocess.run(['git', 'config', 'user.email', 'github-actions[bot]@users.noreply.github.com'], check=True)
           
-          # Find all template files
+          # Find all template files (in root directory subdirectories)
           templates = []
-          for root, dirs, files in os.walk('srcpkgs'):
-              for file in files:
-                  if file == 'template':
-                      templates.append(os.path.join(root, file))
+          for item in os.listdir('.'):
+              template_path = os.path.join(item, 'template')
+              if os.path.isfile(template_path):
+                  templates.append(template_path)
           
           print(f"Found {len(templates)} templates to check")
           updates = []
