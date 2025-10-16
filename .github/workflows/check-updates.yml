@@ -2,7 +2,7 @@ name: Check for Package Updates
 
 on:
   schedule:
-    - cron: '0 7 * * *'  # Daily at 8 AM German time (7 AM UTC in summer, 6 AM UTC in winter - using 7 AM UTC as compromise)
+    - cron: '0 7 * * *'  # Daily at 8 AM German time (7 AM UTC in summer, 6 AM UTC in winter)
   workflow_dispatch:  # Allow manual trigger
 
 permissions:
@@ -26,7 +26,7 @@ jobs:
         run: |
           pip install requests packaging
 
-      - name: Check for updates and create PRs
+      - name: Check for updates and create PR branches
         id: check
         run: |
           python3 << 'EOF'
@@ -35,22 +35,16 @@ jobs:
           import requests
           import subprocess
           from packaging import version
-          
+
           def extract_info_from_template(filepath):
-              """Extract package info from void template"""
               with open(filepath, 'r') as f:
                   content = f.read()
-              
               pkg_match = re.search(r'pkgname=(\S+)', content)
               ver_match = re.search(r'version=(\S+)', content)
               rev_match = re.search(r'revision=(\d+)', content)
-              
               if not pkg_match or not ver_match:
                   return None
-              
-              # Try to find GitHub URL
               github_match = re.search(r'https://github\.com/([^/]+)/([^/\s"]+)', content)
-              
               return {
                   'name': pkg_match.group(1),
                   'version': ver_match.group(1),
@@ -59,17 +53,14 @@ jobs:
                   'file': filepath,
                   'content': content
               }
-          
+
           def get_latest_github_release(owner, repo):
-              """Get latest release from GitHub (including pre-releases)"""
               try:
                   url = f'https://api.github.com/repos/{owner}/{repo}/releases/latest'
                   headers = {'Accept': 'application/vnd.github.v3+json'}
-                  
                   token = os.environ.get('GITHUB_TOKEN')
                   if token:
                       headers['Authorization'] = f'token {token}'
-                  
                   resp = requests.get(url, headers=headers, timeout=10)
                   if resp.status_code == 200:
                       data = resp.json()
@@ -78,273 +69,141 @@ jobs:
               except Exception as e:
                   print(f"Error fetching {owner}/{repo}: {e}")
               return None, None
-          
+
           def update_template(info, new_version):
-              """Update template file with new version and checksum"""
               content = info['content']
-              
-              # Update version
-              content = re.sub(
-                  r'version=\S+',
-                  f'version={new_version}',
-                  content
-              )
-              
-              # Reset revision to 1
-              content = re.sub(
-                  r'revision=\d+',
-                  'revision=1',
-                  content
-              )
-              
-              # Write back
+              content = re.sub(r'version=\S+', f'version={new_version}', content)
+              content = re.sub(r'revision=\d+', 'revision=1', content)
               with open(info['file'], 'w') as f:
                   f.write(content)
-              
-              # Update checksum using xgensum
-              try:
-                  # Extract package directory
-                  pkg_dir = os.path.dirname(info['file'])
-                  
-                  # Download the source file to calculate checksum
-                  print(f"  Calculating checksum...")
-                  
-                  # Parse distfiles URL from template
-                  distfiles_match = re.search(r'distfiles="([^"]+)"', content)
-                  if distfiles_match:
-                      url_template = distfiles_match.group(1)
-                      # Replace ${version} with actual version
-                      download_url = url_template.replace('${version}', new_version)
-                      
-                      # Download file
-                      response = requests.get(download_url, timeout=30)
-                      if response.status_code == 200:
-                          # Calculate SHA256
-                          import hashlib
-                          checksum = hashlib.sha256(response.content).hexdigest()
-                          
-                          # Update checksum in file
-                          with open(info['file'], 'r') as f:
-                              content = f.read()
-                          
-                          content = re.sub(
-                              r'checksum=\S+',
-                              f'checksum={checksum}',
-                              content
-                          )
-                          
-                          with open(info['file'], 'w') as f:
-                              f.write(content)
-                          
-                          print(f"  Checksum updated: {checksum}")
-                          return True
-                      else:
-                          print(f"  Warning: Could not download source file (HTTP {response.status_code})")
-                  else:
-                      print(f"  Warning: Could not find distfiles URL in template")
-              except Exception as e:
-                  print(f"  Warning: Could not update checksum: {e}")
-              
+              # Update checksum
+              distfiles_match = re.search(r'distfiles="([^"]+)"', content)
+              if distfiles_match:
+                  url_template = distfiles_match.group(1)
+                  download_url = url_template.replace('${version}', new_version)
+                  resp = requests.get(download_url, timeout=30)
+                  if resp.status_code == 200:
+                      import hashlib
+                      checksum = hashlib.sha256(resp.content).hexdigest()
+                      content = re.sub(r'checksum=\S+', f'checksum={checksum}', content)
+                      with open(info['file'], 'w') as f:
+                          f.write(content)
               return True
-          
-          def create_pr_for_update(pkg_name, old_ver, new_ver, release_url):
-              """Create a branch and PR for the update"""
+
+          def create_pr_branch(pkg_name):
               branch_name = f'auto-update/{pkg_name}'
-              
-              # Delete branch if it exists locally
               subprocess.run(['git', 'branch', '-D', branch_name], check=False, capture_output=True)
-              
-              # Delete branch if it exists remotely
               subprocess.run(['git', 'push', 'origin', '--delete', branch_name], check=False, capture_output=True)
-              
-              # Create and checkout new branch
               subprocess.run(['git', 'checkout', '-b', branch_name], check=True)
-              
-              # Stage changes
-              subprocess.run(['git', 'add', '.'], check=True)
-              
-              # Commit
-              commit_msg = f'{pkg_name}: update to {new_ver}'
-              subprocess.run(['git', 'commit', '-m', commit_msg], check=True)
-              
-              # Push
-              subprocess.run(['git', 'push', '-f', 'origin', branch_name], check=True)
-              
               return branch_name
-          
-          # Configure git
+
           subprocess.run(['git', 'config', 'user.name', 'github-actions[bot]'], check=True)
           subprocess.run(['git', 'config', 'user.email', 'github-actions[bot]@users.noreply.github.com'], check=True)
-          
-          # Find all template files (in root directory subdirectories)
-          templates = []
-          for item in os.listdir('.'):
-              template_path = os.path.join(item, 'template')
-              if os.path.isfile(template_path):
-                  templates.append(template_path)
-          
+
+          templates = [os.path.join(d, 'template') for d in os.listdir('.') if os.path.isfile(os.path.join(d, 'template'))]
           print(f"Found {len(templates)} templates to check")
+
           updates = []
-          
-          # Check all packages first
-          packages_to_update = []
+
           for template_path in templates:
               info = extract_info_from_template(template_path)
               if not info or not info['github']:
-                  print(f"Skipping {template_path}: no GitHub info found")
                   continue
-              
               owner, repo = info['github']
-              print(f"Checking {info['name']}: current={info['version']}, repo={owner}/{repo}")
               latest_ver, release_url = get_latest_github_release(owner, repo)
-              print(f"  Latest from GitHub: {latest_ver}")
-              
-              if latest_ver:
-                  try:
-                      current = version.parse(info['version'])
-                      latest = version.parse(latest_ver)
-                      
-                      if latest > current:
-                          print(f"  UPDATE AVAILABLE: {info['name']} {info['version']} → {latest_ver}")
-                          packages_to_update.append({
-                              'info': info,
-                              'new_version': latest_ver,
-                              'release_url': release_url
-                          })
-                      else:
-                          print(f"  Already up to date")
-                          
-                  except Exception as e:
-                      print(f"Error checking {info['name']}: {e}")
-          
-          # If there are updates, create a single branch for all of them
-          if packages_to_update:
-              branch_name = 'auto-updates'
-              
-              # Delete branch if it exists locally
-              subprocess.run(['git', 'branch', '-D', branch_name], check=False, capture_output=True)
-              
-              # Delete branch if it exists remotely  
-              subprocess.run(['git', 'push', 'origin', '--delete', branch_name], check=False, capture_output=True)
-              
-              # Fetch to sync
-              subprocess.run(['git', 'fetch'], check=True)
-              
-              # Create and checkout new branch from main
-              subprocess.run(['git', 'checkout', '-b', branch_name], check=True)
-              
-              # Update all packages
-              for pkg in packages_to_update:
-                  try:
-                      print(f"\nUpdating {pkg['info']['name']} to {pkg['new_version']}")
-                      update_template(pkg['info'], pkg['new_version'])
-                      
-                      updates.append({
-                          'package': pkg['info']['name'],
-                          'old_version': pkg['info']['version'],
-                          'new_version': pkg['new_version'],
-                          'release_url': pkg['release_url']
-                      })
-                  except Exception as e:
-                      print(f"Error updating {pkg['info']['name']}: {e}")
-              
-              # Commit all changes
-              subprocess.run(['git', 'add', '.'], check=True)
-              
-              commit_msg = "Update packages: " + ", ".join([f"{u['package']} {u['new_version']}" for u in updates])
-              subprocess.run(['git', 'commit', '-m', commit_msg], check=True)
-              
-              # Push
+              if not latest_ver:
+                  continue
+              current = version.parse(info['version'])
+              latest = version.parse(latest_ver)
+              if latest <= current:
+                  continue
+
+              print(f"Updating {info['name']} {info['version']} -> {latest_ver}")
+              branch_name = create_pr_branch(info['name'])
+              update_template(info, latest_ver)
+              subprocess.run(['git', 'add', info['file']], check=True)
+              subprocess.run(['git', 'commit', '-m', f'{info["name"]}: update to {latest_ver}'], check=True)
               subprocess.run(['git', 'push', '-f', 'origin', branch_name], check=True)
-              
-              print(f"\nUpdated {len(updates)} package(s) in branch '{branch_name}'")
-          # Write summary
-          if updates:
-              with open('pr_summary.txt', 'w') as f:
-                  for update in updates:
-                      f.write(f"{update['package']}|{update['old_version']}|{update['new_version']}|{update['release_url']}\n")
-              
-              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-                  f.write(f"updates_found=true\n")
-                  f.write(f"update_count={len(updates)}\n")
-          else:
-              print("\nNo updates found")
-              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-                  f.write(f"updates_found=false\n")
+
+              updates.append({
+                  'package': info['name'],
+                  'old_version': info['version'],
+                  'new_version': latest_ver,
+                  'branch': branch_name,
+                  'release_url': release_url
+              })
+
+          with open('pr_summary.txt', 'w') as f:
+              for u in updates:
+                  f.write(f"{u['package']}|{u['old_version']}|{u['new_version']}|{u['branch']}|{u['release_url']}\n")
+
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"updates_found={'true' if updates else 'false'}\n")
+              f.write(f"update_count={len(updates)}\n")
           EOF
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create Pull Request
+      - name: Create Pull Requests
         if: steps.check.outputs.updates_found == 'true'
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
-            
+
             if (!fs.existsSync('pr_summary.txt')) {
               console.log('No PR summary found');
               return;
             }
-            
+
             const summary = fs.readFileSync('pr_summary.txt', 'utf8');
             const updates = summary.trim().split('\n').map(line => {
-              const [pkg, oldVer, newVer, releaseUrl] = line.split('|');
-              return { pkg, oldVer, newVer, releaseUrl };
+              const [pkg, oldVer, newVer, branch, releaseUrl] = line.split('|');
+              return { pkg, oldVer, newVer, branch, releaseUrl };
             });
-            
-            const title = `Package Updates (${updates.length} package${updates.length > 1 ? 's' : ''})`;
-            
-            let body = `## Automated Package Updates\n\n`;
-            body += `This PR contains ${updates.length} package update${updates.length > 1 ? 's' : ''}:\n\n`;
-            
+
             for (const update of updates) {
-              body += `### ${update.pkg}\n`;
+              const title = `${update.pkg}: update to ${update.newVer}`;
+              let body = `## Automated Package Update\n\n`;
               body += `- **Current Version:** ${update.oldVer}\n`;
               body += `- **New Version:** ${update.newVer}\n`;
               body += `- **Release:** ${update.releaseUrl}\n\n`;
-            }
-            
-            body += `---\n\nThis PR was automatically generated by the package update workflow.\n`;
-            body += `All version numbers and checksums have been updated automatically.\n\n`;
-            body += `Please review the changes and merge when ready.`;
-            
-            // Check if PR already exists
-            const { data: pulls } = await github.rest.pulls.list({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: 'open',
-              head: `${context.repo.owner}:auto-updates`
-            });
-            
-            if (pulls.length > 0) {
-              // Update existing PR
-              await github.rest.pulls.update({
+              body += `This PR was automatically generated by the package update workflow.\n`;
+
+              const { data: pulls } = await github.rest.pulls.list({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                pull_number: pulls[0].number,
-                title: title,
-                body: body
+                state: 'open',
+                head: `${context.repo.owner}:${update.branch}`
               });
-              console.log(`Updated existing PR #${pulls[0].number}`);
-            } else {
-              // Create new PR
-              await github.rest.pulls.create({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                title: title,
-                body: body,
-                head: 'auto-updates',
-                base: 'main'
-              });
-              console.log('Created new PR');
+
+              if (pulls.length > 0) {
+                await github.rest.pulls.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: pulls[0].number,
+                  title: title,
+                  body: body
+                });
+                console.log(`Updated existing PR #${pulls[0].number} for ${update.pkg}`);
+              } else {
+                await github.rest.pulls.create({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  title: title,
+                  body: body,
+                  head: update.branch,
+                  base: 'main'
+                });
+                console.log(`Created new PR for ${update.pkg}`);
+              }
             }
 
       - name: Summary
         if: always()
         run: |
           if [ "${{ steps.check.outputs.updates_found }}" == "true" ]; then
-            echo "Created/updated PR with ${{ steps.check.outputs.update_count }} package update(s)."
+            echo "Created/updated PRs for ${{ steps.check.outputs.update_count }} package(s)."
           else
             echo "All packages are up to date!"
           fi
