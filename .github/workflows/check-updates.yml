@@ -149,7 +149,13 @@ jobs:
           
           def create_pr_for_update(pkg_name, old_ver, new_ver, release_url):
               """Create a branch and PR for the update"""
-              branch_name = f'update-{pkg_name}-{new_ver}'
+              branch_name = f'auto-update/{pkg_name}'
+              
+              # Delete branch if it exists locally
+              subprocess.run(['git', 'branch', '-D', branch_name], check=False, capture_output=True)
+              
+              # Delete branch if it exists remotely
+              subprocess.run(['git', 'push', 'origin', '--delete', branch_name], check=False, capture_output=True)
               
               # Create and checkout new branch
               subprocess.run(['git', 'checkout', '-b', branch_name], check=True)
@@ -162,7 +168,7 @@ jobs:
               subprocess.run(['git', 'commit', '-m', commit_msg], check=True)
               
               # Push
-              subprocess.run(['git', 'push', 'origin', branch_name], check=True)
+              subprocess.run(['git', 'push', '-f', 'origin', branch_name], check=True)
               
               return branch_name
           
@@ -180,6 +186,8 @@ jobs:
           print(f"Found {len(templates)} templates to check")
           updates = []
           
+          # Check all packages first
+          packages_to_update = []
           for template_path in templates:
               info = extract_info_from_template(template_path)
               if not info or not info['github']:
@@ -198,57 +206,76 @@ jobs:
                       
                       if latest > current:
                           print(f"  UPDATE AVAILABLE: {info['name']} {info['version']} → {latest_ver}")
-                          
-                          # Reset to main for each package
-                          subprocess.run(['git', 'checkout', 'main'], check=True)
-                          subprocess.run(['git', 'pull'], check=True)
-                          
-                          # Update the template
-                          update_template(info, latest_ver)
-                          
-                          # Create PR
-                          branch_name = create_pr_for_update(
-                              info['name'], 
-                              info['version'], 
-                              latest_ver,
-                              release_url
-                          )
-                          
-                          updates.append({
-                              'package': info['name'],
-                              'old_version': info['version'],
+                          packages_to_update.append({
+                              'info': info,
                               'new_version': latest_ver,
-                              'release_url': release_url,
-                              'branch': branch_name
+                              'release_url': release_url
                           })
                       else:
                           print(f"  Already up to date")
                           
                   except Exception as e:
-                      print(f"Error processing {info['name']}: {e}")
-                      # Reset on error
-                      subprocess.run(['git', 'checkout', 'main'], check=False)
-                      subprocess.run(['git', 'reset', '--hard'], check=False)
+                      print(f"Error checking {info['name']}: {e}")
           
+          # If there are updates, create a single branch for all of them
+          if packages_to_update:
+              branch_name = 'auto-updates'
+              
+              # Delete branch if it exists locally
+              subprocess.run(['git', 'branch', '-D', branch_name], check=False, capture_output=True)
+              
+              # Delete branch if it exists remotely  
+              subprocess.run(['git', 'push', 'origin', '--delete', branch_name], check=False, capture_output=True)
+              
+              # Fetch to sync
+              subprocess.run(['git', 'fetch'], check=True)
+              
+              # Create and checkout new branch from main
+              subprocess.run(['git', 'checkout', '-b', branch_name], check=True)
+              
+              # Update all packages
+              for pkg in packages_to_update:
+                  try:
+                      print(f"\nUpdating {pkg['info']['name']} to {pkg['new_version']}")
+                      update_template(pkg['info'], pkg['new_version'])
+                      
+                      updates.append({
+                          'package': pkg['info']['name'],
+                          'old_version': pkg['info']['version'],
+                          'new_version': pkg['new_version'],
+                          'release_url': pkg['release_url']
+                      })
+                  except Exception as e:
+                      print(f"Error updating {pkg['info']['name']}: {e}")
+              
+              # Commit all changes
+              subprocess.run(['git', 'add', '.'], check=True)
+              
+              commit_msg = "Update packages: " + ", ".join([f"{u['package']} {u['new_version']}" for u in updates])
+              subprocess.run(['git', 'commit', '-m', commit_msg], check=True)
+              
+              # Push
+              subprocess.run(['git', 'push', '-f', 'origin', branch_name], check=True)
+              
+              print(f"\nUpdated {len(updates)} package(s) in branch '{branch_name}'")
           # Write summary
           if updates:
               with open('pr_summary.txt', 'w') as f:
                   for update in updates:
-                      f.write(f"{update['package']}|{update['old_version']}|{update['new_version']}|{update['release_url']}|{update['branch']}\n")
+                      f.write(f"{update['package']}|{update['old_version']}|{update['new_version']}|{update['release_url']}\n")
               
-              print(f"\n✅ Created {len(updates)} PR(s)")
               with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
                   f.write(f"updates_found=true\n")
                   f.write(f"update_count={len(updates)}\n")
           else:
-              print("\n✅ No updates found")
+              print("\nNo updates found")
               with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
                   f.write(f"updates_found=false\n")
           EOF
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create Pull Requests
+      - name: Create Pull Request
         if: steps.check.outputs.updates_found == 'true'
         uses: actions/github-script@v7
         with:
@@ -261,34 +288,63 @@ jobs:
             }
             
             const summary = fs.readFileSync('pr_summary.txt', 'utf8');
-            const updates = summary.trim().split('\n');
+            const updates = summary.trim().split('\n').map(line => {
+              const [pkg, oldVer, newVer, releaseUrl] = line.split('|');
+              return { pkg, oldVer, newVer, releaseUrl };
+            });
             
-            for (const line of updates) {
-              const [pkg, oldVer, newVer, releaseUrl, branch] = line.split('|');
-              
-              const title = `${pkg}: update to ${newVer}`;
-              const body = `## Package Update\n\n**Package:** ${pkg}\n**Current Version:** ${oldVer}\n**New Version:** ${newVer}\n**Release:** ${releaseUrl}\n\n---\n\nThis PR was automatically generated by the package update workflow.\n\nPlease review the changes and test before merging:\n1. Check the changelog at the release URL above\n2. Verify the checksum has been updated if necessary\n3. Test build locally if possible\n\nTo update the checksum, run:\n\`\`\`bash\nxbps-src clean ${pkg}\nxgensum -i srcpkgs/${pkg}/template\n\`\`\``;
-              
-              try {
-                await github.rest.pulls.create({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  title: title,
-                  body: body,
-                  head: branch,
-                  base: 'main'
-                });
-                console.log(`Created PR for ${pkg}`);
-              } catch (error) {
-                console.error(`Failed to create PR for ${pkg}:`, error.message);
-              }
+            const title = `Package Updates (${updates.length} package${updates.length > 1 ? 's' : ''})`;
+            
+            let body = `## Automated Package Updates\n\n`;
+            body += `This PR contains ${updates.length} package update${updates.length > 1 ? 's' : ''}:\n\n`;
+            
+            for (const update of updates) {
+              body += `### ${update.pkg}\n`;
+              body += `- **Current Version:** ${update.oldVer}\n`;
+              body += `- **New Version:** ${update.newVer}\n`;
+              body += `- **Release:** ${update.releaseUrl}\n\n`;
+            }
+            
+            body += `---\n\nThis PR was automatically generated by the package update workflow.\n`;
+            body += `All version numbers and checksums have been updated automatically.\n\n`;
+            body += `Please review the changes and merge when ready.`;
+            
+            // Check if PR already exists
+            const { data: pulls } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              head: `${context.repo.owner}:auto-updates`
+            });
+            
+            if (pulls.length > 0) {
+              // Update existing PR
+              await github.rest.pulls.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: pulls[0].number,
+                title: title,
+                body: body
+              });
+              console.log(`Updated existing PR #${pulls[0].number}`);
+            } else {
+              // Create new PR
+              await github.rest.pulls.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: title,
+                body: body,
+                head: 'auto-updates',
+                base: 'main'
+              });
+              console.log('Created new PR');
             }
 
       - name: Summary
         if: always()
         run: |
           if [ "${{ steps.check.outputs.updates_found }}" == "true" ]; then
-            echo "✅ Created ${{ steps.check.outputs.update_count }} PR(s) for package updates."
+            echo "Created/updated PR with ${{ steps.check.outputs.update_count }} package update(s)."
           else
-            echo "✅ All packages are up to date!"
+            echo "All packages are up to date!"
           fi
