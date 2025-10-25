@@ -8,7 +8,7 @@ maintainer="Ly-sec <itslysec@gmail.com>"
 license="GPL-2.0-only"
 homepage="https://github.com/InioX/matugen"
 distfiles="https://github.com/InioX/matugen/archive/refs/heads/main.tar.gz"
-checksum=c1e4a58d39131eba491b2dd87d7d38f288b5c8f249c4db9a4e798ab89d20cf37
+checksum="c1e4a58d39131eba491b2dd87d7d38f288b5c8f249c4db9a4e798ab89d20cf37"
 wrksrc="matugen-main"
 
 provides="matugen-${version}_${revision}"
