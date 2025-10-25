@@ -10,13 +10,9 @@ maintainer="Lysec <itslysec@gmail.com>"
 homepage="https://github.com/Vysp3r/ProtonPlus"
 license="GPL-3.0-or-later"
 
-# Runtime dependencies
 depends="gtk4 json-glib libadwaita libarchive libgee libsoup3"
-
-# Build-time dependencies
 hostmakedepends="meson vala pkg-config glib-devel gettext gtk4-devel json-glib-devel libadwaita-devel libarchive-devel libgee-devel libsoup3-devel desktop-file-utils appstream-glib"
 
-# Source
 distfiles="https://github.com/Vysp3r/ProtonPlus/archive/refs/tags/v${version}.tar.gz"
 checksum=6ff702f06a655696c5e5aecc782a1dd7c7ec248af4db394b1077564cb92a1691
 

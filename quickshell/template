@@ -16,4 +16,4 @@ license="LGPL-3.0-only"
 homepage="https://quickshell.org"
 changelog="https://quickshell.org/changelog/"
 distfiles="https://github.com/quickshell-mirror/quickshell/archive/refs/tags/v${version}.tar.gz"
-checksum="337bab5d4badb92e51d01ac1cfbeaeb784478bad82f3c8297fd7be42a6995af2"
+checksum=337bab5d4badb92e51d01ac1cfbeaeb784478bad82f3c8297fd7be42a6995af2
