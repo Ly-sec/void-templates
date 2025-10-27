@@ -1,5 +1,5 @@
 pkgname=matugen-bin
-version=2.4.1
+version=3.0.0
 revision=1
 maintainer="Ly-sec <itslysec@gmail.com>"
 short_desc="A material you color generation tool with templates"
@@ -8,7 +8,7 @@ license="GPL-2.0-or-later"
 arch="x86_64"
 
 distfiles="https://github.com/InioX/matugen/releases/download/v${version}/matugen-${version}-x86_64.tar.gz"
-checksum=dc62b3b752ba85b63cdec7d82521bcba1748b5a7f1a6f2643dd154eb5b77df14
+checksum=fbb887631fe36770b55d06be44ca16959e542c02f5ca881263d2c26a16216405
 
 build() {
     return 0
