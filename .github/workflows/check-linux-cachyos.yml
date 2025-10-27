@@ -56,6 +56,7 @@ jobs:
 
           def download_and_hash(url):
               try:
+                  print(f"Downloading: {url}")
                   resp = requests.get(url, timeout=120, stream=True)
                   if resp.status_code == 200:
                       hasher = hashlib.sha256()
@@ -78,84 +79,52 @@ jobs:
                   try:
                       resp = requests.head(url, timeout=10)
                       if resp.status_code != 200:
+                          print(f"Patch not found: {url}")
                           return False
-                  except Exception:
+                  except Exception as e:
+                      print(f"Error checking {url}: {e}")
                       return False
               return True
 
-          def update_template(template_path, latest_version, checksums, current_version):
-              if not os.path.exists(template_path):
-                  print(f"Template file not found: {template_path}")
-                  os.system("ls -R .")
-                  return False
-
-              with open(template_path, 'r', encoding='utf-8', errors='replace') as f:
-                  content = f.read()
-
-              ver_match = re.search(r'version\s*=\s*"?([0-9.]+)"?', content)
-              if not ver_match:
-                  print(f"Could not find version in {template_path}")
-                  return False
-
-              new_content = content
-              new_content = re.sub(r'version\s*=\s*"?[0-9.]+"?', f'version={latest_version}', new_content)
-              new_content = re.sub(r'revision=\d+', 'revision=1', new_content)
-
-              old_major_minor = '.'.join(current_version.split('.')[:2])
-              major_minor = '.'.join(latest_version.split('.')[:2])
-              major = latest_version.split('.')[0]
-
-              new_content = new_content.replace(f'/v{current_version.split(".")[0]}.x/', f'/v{major}.x/')
-              new_content = new_content.replace(f'/{old_major_minor}/', f'/{major_minor}/')
-
-              checksum_str = '\n  '.join(checksums)
-              new_content = re.sub(
-                  r'checksum="[^"]*(?:\n[^"]*)*"',
-                  f'checksum="\n  {checksum_str}\n"',
-                  new_content,
-                  flags=re.MULTILINE
-              )
-
-              with open(template_path, 'w') as f:
-                  f.write(new_content)
-
-              return True
-
-          main_template = 'linux-cachyos/template'
-          header_template = 'linux-cachyos-headers/template'
-
-          if not os.path.exists(main_template):
-              print("Missing linux-cachyos/template file")
-              exit(1)
-
-          with open(main_template, 'r', encoding='utf-8', errors='replace') as f:
+          template_path = 'linux-cachyos/template'
+          with open(template_path, 'r') as f:
               content = f.read()
 
-          ver_match = re.search(r'version\s*=\s*"?([0-9.]+)"?', content)
+          ver_match = re.search(r'version=(\\S+)', content)
           if not ver_match:
-              print("Could not find version in linux-cachyos/template")
+              print("Could not find version in template")
               exit(1)
-
+          
           current_version = ver_match.group(1)
+          print(f"Current kernel version: {current_version}")
 
           latest_version = get_latest_kernel_version()
           if not latest_version:
               print("Could not fetch latest kernel version")
               exit(1)
+          
+          print(f"Latest kernel version: {latest_version}")
 
-          if version.parse(latest_version) <= version.parse(current_version):
+          current = version.parse(current_version)
+          latest = version.parse(latest_version)
+
+          if latest <= current:
+              print("Kernel is up to date")
               with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-                  f.write("update_needed=false\n")
+                  f.write("update_needed=false\\n")
               exit(0)
 
           if not check_cachyos_patches_exist(latest_version):
+              print(f"CachyOS patches not yet available for {latest_version}")
               with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-                  f.write("update_needed=false\n")
+                  f.write("update_needed=false\\n")
               exit(0)
+
+          print(f"Update available: {current_version} -> {latest_version}")
 
           major_minor = '.'.join(latest_version.split('.')[:2])
           major = latest_version.split('.')[0]
-
+          
           urls = [
               f'https://cdn.kernel.org/pub/linux/kernel/v{major}.x/linux-{latest_version}.tar.xz',
               'https://raw.githubusercontent.com/CachyOS/linux-cachyos/master/linux-cachyos/config',
@@ -170,33 +139,51 @@ jobs:
                   print(f"Failed to download {url}")
                   exit(1)
               checksums.append(checksum)
+              print(f"  {checksum}")
 
-          ok_main = update_template(main_template, latest_version, checksums, current_version)
-          ok_headers = update_template(header_template, latest_version, checksums, current_version)
-          if not (ok_main and ok_headers):
-              exit(1)
+          new_content = content
+          new_content = re.sub(r'version=\\S+', f'version={latest_version}', new_content)
+          new_content = re.sub(r'revision=\\d+', 'revision=1', new_content)
+
+          old_major_minor = '.'.join(current_version.split('.')[:2])
+          new_content = new_content.replace(f'/v{current_version.split(".")[0]}.x/', f'/v{major}.x/')
+          new_content = new_content.replace(f'/{old_major_minor}/', f'/{major_minor}/')
+
+          checksum_str = '\\n  '.join(checksums)
+          new_content = re.sub(
+              r'checksum="[^"]*(?:\\n[^"]*)*"',
+              f'checksum="\\n  {checksum_str}\\n"',
+              new_content,
+              flags=re.MULTILINE
+          )
+
+          with open(template_path, 'w') as f:
+              f.write(new_content)
 
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-              f.write("update_needed=true\n")
-              f.write(f"old_version={current_version}\n")
-              f.write(f"new_version={latest_version}\n")
+              f.write("update_needed=true\\n")
+              f.write(f"old_version={current_version}\\n")
+              f.write(f"new_version={latest_version}\\n")
+
+          print("Template updated successfully")
           EOF
 
       - name: Setup void-packages for build test
-        if: ${{ steps.check.outputs.update_needed == 'true' && inputs.skip_build != 'true' }}
+        if: steps.check.outputs.update_needed == 'true' && inputs.skip_build != 'true'
         run: |
           git clone --depth=1 https://github.com/void-linux/void-packages.git /tmp/void-packages
           mkdir -p /tmp/void-packages/srcpkgs/linux-cachyos
           cp linux-cachyos/template /tmp/void-packages/srcpkgs/linux-cachyos/
 
       - name: Install void-packages dependencies
-        if: ${{ steps.check.outputs.update_needed == 'true' && inputs.skip_build != 'true' }}
+        if: steps.check.outputs.update_needed == 'true' && inputs.skip_build != 'true'
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential git libssl-dev libelf-dev bc flex bison rsync kmod xz-utils zstd
+          sudo apt-get install -y \
+            build-essential git libssl-dev libelf-dev bc flex bison rsync kmod xz-utils zstd
 
       - name: Test build kernel (configure + partial compile)
-        if: ${{ steps.check.outputs.update_needed == 'true' && inputs.skip_build != 'true' }}
+        if: steps.check.outputs.update_needed == 'true' && inputs.skip_build != 'true'
         id: test_build
         continue-on-error: true
         timeout-minutes: 30
@@ -204,20 +191,23 @@ jobs:
           cd /tmp/void-packages
           ./xbps-src binary-bootstrap || true
           ./xbps-src -f pkg linux-cachyos 2>&1 | tee build.log || {
+            echo "Build test failed, checking logs..."
             tail -100 build.log
             exit 1
           }
+          echo "Build test passed (patches applied, config valid)"
 
       - name: Build result
-        if: ${{ steps.check.outputs.update_needed == 'true' && inputs.skip_build != 'true' }}
+        if: steps.check.outputs.update_needed == 'true' && inputs.skip_build != 'true'
         run: |
           if [ "${{ steps.test_build.outcome }}" == "success" ]; then
             echo "build_status=Build test passed" >> $GITHUB_ENV
           else
             echo "build_status=Build test failed - check logs" >> $GITHUB_ENV
+          fi
 
       - name: Create Pull Request
-        if: ${{ steps.check.outputs.update_needed == 'true' }}
+        if: steps.check.outputs.update_needed == 'true'
         uses: peter-evans/create-pull-request@v5
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -232,10 +222,6 @@ jobs:
             - **New Version:** ${{ steps.check.outputs.new_version }}
             - **Kernel.org Release:** https://kernel.org/
 
-            ### Updated Packages
-            - linux-cachyos
-            - linux-cachyos-headers
-
             ### Build Test Status
             ${{ env.build_status || 'Build test skipped' }}
 
@@ -243,13 +229,27 @@ jobs:
             - Updated kernel version to ${{ steps.check.outputs.new_version }}
             - Updated all distfile checksums
             - Updated CachyOS patch URLs for new kernel version
-            - Reset revision to 1 in both templates
+            - Reset revision to 1
 
             ### Testing Required
-            1. Build: `xbps-src pkg linux-cachyos linux-cachyos-headers`
+            1. Build the package: `xbps-src pkg linux-cachyos`
             2. Install and boot test
             3. Verify all CachyOS patches apply correctly
-            4. Check modules and headers linkage
+            4. Check that modules load properly
+
+            ### Package Location
+            After merging, build manually:
+            ```bash
+            cd void-packages
+            ./xbps-src pkg linux-cachyos
+            # Package will be in hostdir/binpkgs/
+            ```
+
+            This PR was automatically generated by the kernel update workflow.
+          labels: |
+            automated
+            kernel
+            needs-testing
 
       - name: Summary
         if: always()
@@ -261,3 +261,4 @@ jobs:
             fi
           else
             echo "Kernel is up to date or patches not available yet"
+          fi
