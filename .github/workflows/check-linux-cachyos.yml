@@ -87,23 +87,32 @@ jobs:
               return True
 
           template_path = 'linux-cachyos/template'
-          with open(template_path, 'r') as f:
+
+          if not os.path.exists(template_path):
+              print(f"❌ Template file not found: {template_path}")
+              os.system("ls -R .")
+              exit(1)
+
+          with open(template_path, 'r', encoding='utf-8', errors='replace') as f:
               content = f.read()
 
-          ver_match = re.search(r'version=(\\S+)', content)
+          print("🔍 Template preview (first 10 lines):")
+          print("\n".join(content.splitlines()[:10]))
+
+          ver_match = re.search(r'version\s*=\s*"?([0-9.]+)"?', content)
           if not ver_match:
-              print("Could not find version in template")
+              print("❌ Could not find version in template — check for spaces, quotes, or comments")
               exit(1)
-          
+
           current_version = ver_match.group(1)
-          print(f"Current kernel version: {current_version}")
+          print(f"✅ Current kernel version found: {current_version}")
 
           latest_version = get_latest_kernel_version()
           if not latest_version:
               print("Could not fetch latest kernel version")
               exit(1)
           
-          print(f"Latest kernel version: {latest_version}")
+          print(f"🌐 Latest kernel version: {latest_version}")
 
           current = version.parse(current_version)
           latest = version.parse(latest_version)
@@ -111,16 +120,16 @@ jobs:
           if latest <= current:
               print("Kernel is up to date")
               with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-                  f.write("update_needed=false\\n")
+                  f.write("update_needed=false\n")
               exit(0)
 
           if not check_cachyos_patches_exist(latest_version):
               print(f"CachyOS patches not yet available for {latest_version}")
               with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-                  f.write("update_needed=false\\n")
+                  f.write("update_needed=false\n")
               exit(0)
 
-          print(f"Update available: {current_version} -> {latest_version}")
+          print(f"🚀 Update available: {current_version} → {latest_version}")
 
           major_minor = '.'.join(latest_version.split('.')[:2])
           major = latest_version.split('.')[0]
@@ -142,17 +151,17 @@ jobs:
               print(f"  {checksum}")
 
           new_content = content
-          new_content = re.sub(r'version=\\S+', f'version={latest_version}', new_content)
-          new_content = re.sub(r'revision=\\d+', 'revision=1', new_content)
+          new_content = re.sub(r'version\s*=\s*"?[0-9.]+"?', f'version={latest_version}', new_content)
+          new_content = re.sub(r'revision=\d+', 'revision=1', new_content)
 
           old_major_minor = '.'.join(current_version.split('.')[:2])
           new_content = new_content.replace(f'/v{current_version.split(".")[0]}.x/', f'/v{major}.x/')
           new_content = new_content.replace(f'/{old_major_minor}/', f'/{major_minor}/')
 
-          checksum_str = '\\n  '.join(checksums)
+          checksum_str = '\n  '.join(checksums)
           new_content = re.sub(
-              r'checksum="[^"]*(?:\\n[^"]*)*"',
-              f'checksum="\\n  {checksum_str}\\n"',
+              r'checksum="[^"]*(?:\n[^"]*)*"',
+              f'checksum="\n  {checksum_str}\n"',
               new_content,
               flags=re.MULTILINE
           )
@@ -161,11 +170,11 @@ jobs:
               f.write(new_content)
 
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-              f.write("update_needed=true\\n")
-              f.write(f"old_version={current_version}\\n")
-              f.write(f"new_version={latest_version}\\n")
+              f.write("update_needed=true\n")
+              f.write(f"old_version={current_version}\n")
+              f.write(f"new_version={latest_version}\n")
 
-          print("Template updated successfully")
+          print("✅ Template updated successfully")
           EOF
 
       - name: Setup void-packages for build test
