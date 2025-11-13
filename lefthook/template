@@ -1,5 +1,5 @@
 pkgname=lefthook
-version=2.0.1
+version=2.0.3
 revision=1
 hostmakedepends="go git"
 maintainer="Ly-sec <itslysec@gmail.com>"
