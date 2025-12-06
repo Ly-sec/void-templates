@@ -1,5 +1,5 @@
 pkgname=linux-cachyos
-version=6.17.5
+version=6.17.9
 revision=1
 wrksrc="linux-${version}"
 build_style=gnu-makefile
